@@ -1,0 +1,150 @@
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.popup import Popup
+try:
+    from kivy.garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
+except Exception:
+    FigureCanvasKivyAgg = None
+from kivy.uix.spinner import Spinner
+import json
+import os
+from datetime import datetime
+
+class TodoApp(App):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.todos = []
+        self.load_todos()
+
+    def build(self):
+        self.title = "Todo List App"
+        main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        
+        # Input section
+        input_layout = BoxLayout(size_hint_y=0.1, spacing=5)
+        self.task_input = TextInput(hint_text='Enter a task...', multiline=False)
+        add_btn = Button(text='Add', size_hint_x=0.2)
+        add_btn.bind(on_press=self.add_task)
+        input_layout.add_widget(self.task_input)
+        input_layout.add_widget(add_btn)
+        
+        # Filter section
+        filter_layout = BoxLayout(size_hint_y=0.08, spacing=5)
+        self.filter_spinner = Spinner(
+            text='All',
+            values=('All', 'Completed', 'Pending'),
+            size_hint_x=0.3
+        )
+        self.filter_spinner.bind(text=self.filter_tasks)
+        clear_btn = Button(text='Clear Completed', size_hint_x=0.35)
+        clear_btn.bind(on_press=self.clear_completed)
+        filter_layout.add_widget(Label(text='Filter:', size_hint_x=0.15))
+        filter_layout.add_widget(self.filter_spinner)
+        filter_layout.add_widget(clear_btn)
+        
+        # Scrollable tasks section
+        self.scroll_view = ScrollView(size_hint_y=0.7)
+        self.tasks_layout = GridLayout(cols=1, spacing=5, size_hint_y=None)
+        self.tasks_layout.bind(minimum_height=self.tasks_layout.setter('height'))
+        self.scroll_view.add_widget(self.tasks_layout)
+        
+        # Stats section
+        stats_layout = BoxLayout(size_hint_y=0.07, spacing=5)
+        self.stats_label = Label(text='Total: 0 | Completed: 0')
+        stats_layout.add_widget(self.stats_label)
+        
+        main_layout.add_widget(input_layout)
+        main_layout.add_widget(filter_layout)
+        main_layout.add_widget(self.scroll_view)
+        main_layout.add_widget(stats_layout)
+        
+        self.display_tasks()
+        return main_layout
+
+    def add_task(self, instance):
+        task_text = self.task_input.text.strip()
+        if task_text:
+            self.todos.append({
+                'task': task_text,
+                'completed': False,
+                'date': datetime.now().strftime('%Y-%m-%d %H:%M')
+            })
+            self.task_input.text = ''
+            self.save_todos()
+            self.display_tasks()
+
+    def display_tasks(self):
+        self.tasks_layout.clear_widgets()
+        filter_mode = self.filter_spinner.text
+        
+        for i, todo in enumerate(self.todos):
+            if filter_mode == 'Completed' and not todo['completed']:
+                continue
+            if filter_mode == 'Pending' and todo['completed']:
+                continue
+            
+            task_layout = BoxLayout(size_hint_y=None, height=50, spacing=5)
+            
+            checkbox = CheckBox(active=todo['completed'], size_hint_x=0.1)
+            checkbox.bind(active=lambda cb, val, idx=i: self.toggle_task(idx, val))
+            
+            task_label = Label(
+                text=todo['task'],
+                size_hint_x=0.6,
+                halign='left'
+            )
+            
+            delete_btn = Button(text='Delete', size_hint_x=0.2)
+            delete_btn.bind(on_press=lambda x, idx=i: self.delete_task(idx))
+            
+            date_label = Label(text=todo['date'], size_hint_x=0.1, font_size='10sp')
+            
+            task_layout.add_widget(checkbox)
+            task_layout.add_widget(task_label)
+            task_layout.add_widget(date_label)
+            task_layout.add_widget(delete_btn)
+            
+            self.tasks_layout.add_widget(task_layout)
+        
+        self.update_stats()
+
+    def toggle_task(self, index, value):
+        self.todos[index]['completed'] = value
+        self.save_todos()
+        self.display_tasks()
+
+    def delete_task(self, index):
+        self.todos.pop(index)
+        self.save_todos()
+        self.display_tasks()
+
+    def clear_completed(self, instance):
+        self.todos = [t for t in self.todos if not t['completed']]
+        self.save_todos()
+        self.display_tasks()
+
+    def filter_tasks(self, spinner, text):
+        self.display_tasks()
+
+    def update_stats(self):
+        total = len(self.todos)
+        completed = sum(1 for t in self.todos if t['completed'])
+        self.stats_label.text = f'Total: {total} | Completed: {completed}'
+
+    def save_todos(self):
+        with open('todos.json', 'w') as f:
+            json.dump(self.todos, f)
+
+    def load_todos(self):
+        if os.path.exists('todos.json'):
+            with open('todos.json', 'r') as f:
+                self.todos = json.load(f)
+
+if __name__ == '__main__':
+    TodoApp().run()
